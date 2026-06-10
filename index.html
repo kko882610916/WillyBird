@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Willy Bird - 윌리버드</title>
+    <!-- Tailwind CSS 사용 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 모바일 터치 시 하이라이트 제거 및 드래그 방지 */
+        canvas {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            touch-action: none;
+        }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            background-color: #1a1a1a;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-2 sm:p-4">
+
+    <!-- 게임 컨테이너 -->
+    <div class="relative w-full max-w-md bg-black rounded-2xl overflow-hidden shadow-2xl border-4 border-yellow-400">
+        
+        <!-- 게임 캔버스 -->
+        <canvas id="gameCanvas" class="w-full h-auto block"></canvas>
+
+        <!-- UI 레이어 (시작, 게임오버, 점수) -->
+        <div id="uiOverlay" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none p-6">
+            
+            <!-- 점수 표시 (게임 중) -->
+            <div id="gameScore" class="absolute top-6 text-white text-5xl font-extrabold drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] hidden">
+                0
+            </div>
+
+            <!-- 시작 화면 -->
+            <div id="startScreen" class="flex flex-col items-center justify-center text-center pointer-events-auto">
+                <h1 class="text-4xl sm:text-5xl font-black text-yellow-300 mb-2 tracking-wider drop-shadow-[0_4px_0_rgba(0,0,0,1)] animate-bounce">
+                    WILLY BIRD
+                </h1>
+                <p class="text-white text-sm sm:text-base font-bold bg-black/50 px-4 py-2 rounded-full mb-8">
+                    구글 플레이 명작 윌리버드 복각판
+                </p>
+                
+                <!-- 플레이 가이드 (SVG 이미지 대체용 캐릭터 가이드) -->
+                <div class="w-24 h-24 mb-6 relative animate-pulse">
+                    <svg viewBox="0 0 100 100" class="w-full h-full">
+                        <!-- 새 캐릭터 그리기 -->
+                        <ellipse cx="50" cy="50" rx="30" ry="25" fill="#facc15" stroke="#000" stroke-width="4"/>
+                        <circle cx="65" cy="45" r="8" fill="#fff" stroke="#000" stroke-width="3"/>
+                        <circle cx="67" cy="45" r="3" fill="#000"/>
+                        <polygon points="75,45 90,50 75,55" fill="#f97316" stroke="#000" stroke-width="3"/>
+                        <path d="M 30 50 Q 15 45 35 35 Z" fill="#e11d48" stroke="#000" stroke-width="3"/>
+                    </svg>
+                </div>
+
+                <button id="startButton" class="px-8 py-4 bg-orange-500 hover:bg-orange-600 active:scale-95 transition-transform text-white font-extrabold text-xl rounded-2xl border-b-8 border-orange-700 shadow-lg cursor-pointer">
+                    게임 시작 (TAP / SPACE)
+                </button>
+                <p class="text-yellow-200 text-xs mt-4 font-bold tracking-wide">
+                    화면을 터치하거나 스페이스바를 누르세요!
+                </p>
+            </div>
+
+            <!-- 게임오버 화면 -->
+            <div id="gameOverScreen" class="flex flex-col items-center justify-center text-center pointer-events-auto hidden">
+                <h2 class="text-4xl sm:text-5xl font-black text-red-500 mb-6 tracking-wide drop-shadow-[0_4px_0_rgba(0,0,0,1)]">
+                    GAME OVER
+                </h2>
+                
+                <!-- 점수 보드 -->
+                <div class="bg-yellow-100/90 border-4 border-yellow-600 rounded-2xl p-6 mb-6 w-64 shadow-xl text-yellow-950 font-bold">
+                    <div class="mb-4">
+                        <span class="text-sm block uppercase tracking-wider text-yellow-800">Score</span>
+                        <span id="finalScore" class="text-3xl font-black">0</span>
+                    </div>
+                    <hr class="border-yellow-600/30 my-2">
+                    <div>
+                        <span class="text-sm block uppercase tracking-wider text-yellow-800">Best Score</span>
+                        <span id="bestScore" class="text-3xl font-black text-orange-600">0</span>
+                    </div>
+                </div>
+
+                <button id="restartButton" class="px-8 py-4 bg-green-500 hover:bg-green-600 active:scale-95 transition-transform text-white font-extrabold text-xl rounded-2xl border-b-8 border-green-700 shadow-lg cursor-pointer">
+                    다시 도전하기
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 푸터 -->
+    <div class="mt-4 text-center text-gray-400 text-xs font-semibold">
+        <p>HTML5 기반 물리/드로잉 엔진 작동 중</p>
+        <p class="mt-1 text-gray-500">© 2026 Willy Bird Classic Tribute</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI 엘리먼트
+        const uiOverlay = document.getElementById('uiOverlay');
+        const gameScore = document.getElementById('gameScore');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const startButton = document.getElementById('startButton');
+        const restartButton = document.getElementById('restartButton');
+        const finalScoreText = document.getElementById('finalScore');
+        const bestScoreText = document.getElementById('bestScore');
+
+        // 게임 스케일링 설정 (원작 느낌의 해상도 설정)
+        const GAME_WIDTH = 480;
+        const GAME_HEIGHT = 640;
+        canvas.width = GAME_WIDTH;
+        canvas.height = GAME_HEIGHT;
+
+        // 게임 상태 정의
+        const STATE_START = 'start';
+        const STATE_PLAYING = 'playing';
+        const STATE_GAMEOVER = 'gameover';
+        let gameState = STATE_START;
+
+        // 최고 기록 로드
+        let bestScore = localStorage.getItem('willyBirdBest') || 0;
+
+        // 게임 변수
+        let bird;
+        let pipes = [];
+        let score = 0;
+        let gameFrame = 0;
+        let bgScrollX = 0;
+        let fgScrollX = 0;
+
+        // 사운드 시뮬레이션용 Web Audio API (효과음)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(type) {
+            // 브라우저 차단 우려 해결을 위한 상태 체크
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'flap') {
+                // 점프 효과음 (주파수가 빠르게 상승)
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(700, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } else if (type === 'point') {
+                // 점수 획득 효과음 (경쾌한 띵링 소리)
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(1000, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.25);
+            } else if (type === 'hit') {
+                // 충돌 효과음 (주파수가 빠르게 하강)
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.4);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.4);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.4);
+            }
+        }
+
+        // --- 새(Bird) 클래스 ---
+        class Bird {
+            constructor() {
+                this.x = 100;
+                this.y = GAME_HEIGHT / 2;
+                this.radius = 18;
+                this.gravity = 0.4;
+                this.jump = -7.5;
+                this.velocity = 0;
+                this.angle = 0;
+                this.wingPhase = 0;
+            }
+
+            update() {
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+
+                // 머리 각도 계산 (속도에 비례)
+                this.angle = Math.min(Math.PI / 4, Math.max(-Math.PI / 8, this.velocity * 0.06));
+
+                // 바닥 및 천장 경계 제어
+                if (this.y + this.radius > GAME_HEIGHT - 80) { // 하단 풀밭 라인
+                    this.y = GAME_HEIGHT - 80 - this.radius;
+                    this.velocity = 0;
+                    gameOver();
+                }
+                if (this.y - this.radius < 0) {
+                    this.y = this.radius;
+                    this.velocity = 0;
+                }
+
+                // 날개짓 애니메이션 속도 제어
+                if (gameState === STATE_PLAYING) {
+                    this.wingPhase += 0.25;
+                } else {
+                    this.wingPhase += 0.05;
+                }
+            }
+
+            flap() {
+                this.velocity = this.jump;
+                playSound('flap');
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.angle);
+
+                // 그림자 효과
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+                ctx.shadowBlur = 8;
+                ctx.shadowOffsetY = 4;
+
+                // 1. 몸체 (둥글고 귀여운 노란색 몸체)
+                ctx.fillStyle = '#facc15';
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 24, 20, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 2. 배 부분 (하얀색 털 무늬)
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(-4, 6, 12, 8, Math.PI/12, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 3. 부리 (오렌지색)
+                ctx.fillStyle = '#f97316';
+                ctx.beginPath();
+                ctx.moveTo(18, -4);
+                ctx.lineTo(34, 0);
+                ctx.lineTo(18, 6);
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+
+                // 4. 눈 (크고 맑은 눈)
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(10, -6, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                // 눈동자
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(12, -6, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 하이라이트 (빛나는 눈방울)
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(11, -7, 1, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 5. 날개 (빨간색 깃털, 날개짓 위아래 애니메이션 적용)
+                const wingOffset = Math.sin(this.wingPhase) * 8;
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath();
+                ctx.ellipse(-12, 0, 10, 12 + wingOffset / 2, -Math.PI/6, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        // --- 파이프 장애물 클래스 ---
+        class Pipe {
+            constructor() {
+                this.spacing = 145; // 파이프 사이 빈틈의 고정 높이
+                this.minHeight = 80;
+                this.maxHeight = GAME_HEIGHT - 80 - this.spacing - this.minHeight;
+                this.topHeight = Math.floor(Math.random() * (this.maxHeight - this.minHeight + 1)) + this.minHeight;
+                this.bottomHeight = GAME_HEIGHT - 80 - this.spacing - this.topHeight;
+                this.x = GAME_WIDTH;
+                this.width = 72;
+                this.speed = 2.4;
+                this.passed = false;
+            }
+
+            update() {
+                this.x -= this.speed;
+            }
+
+            draw() {
+                // 파이프 색상 그라데이션 기법 구현
+                const pipeGradTop = ctx.createLinearGradient(this.x, 0, this.x + this.width, 0);
+                pipeGradTop.addColorStop(0, '#15803d');
+                pipeGradTop.addColorStop(0.3, '#22c55e');
+                pipeGradTop.addColorStop(0.7, '#4ade80');
+                pipeGradTop.addColorStop(1, '#166534');
+
+                ctx.strokeStyle = '#000000';
+                ctx.lineWidth = 4;
+
+                // 위쪽 파이프 몸체
+                ctx.fillStyle = pipeGradTop;
+                ctx.fillRect(this.x, 0, this.width, this.topHeight);
+                ctx.strokeRect(this.x, 0, this.width, this.topHeight);
+
+                // 위쪽 파이프 입구 (턱 부분)
+                ctx.fillRect(this.x - 4, this.topHeight - 28, this.width + 8, 28);
+                ctx.strokeRect(this.x - 4, this.topHeight - 28, this.width + 8, 28);
+
+                // 아래쪽 파이프 몸체
+                const pipeGradBottom = ctx.createLinearGradient(this.x, 0, this.x + this.width, 0);
+                pipeGradBottom.addColorStop(0, '#15803d');
+                pipeGradBottom.addColorStop(0.3, '#22c55e');
+                pipeGradBottom.addColorStop(0.7, '#4ade80');
+                pipeGradBottom.addColorStop(1, '#166534');
+
+                ctx.fillStyle = pipeGradBottom;
+                ctx.fillRect(this.x, GAME_HEIGHT - 80 - this.bottomHeight, this.width, this.bottomHeight);
+                ctx.strokeRect(this.x, GAME_HEIGHT - 80 - this.bottomHeight, this.width, this.bottomHeight);
+
+                // 아래쪽 파이프 입구 (턱 부분)
+                ctx.fillRect(this.x - 4, GAME_HEIGHT - 80 - this.bottomHeight, this.width + 8, 28);
+                ctx.strokeRect(this.x - 4, GAME_HEIGHT - 80 - this.bottomHeight, this.width + 8, 28);
+            }
+
+            // 충돌 정밀 검사
+            collidesWith(b) {
+                // 충돌 완충 크기 (정밀한 플레이 경험 유도)
+                const padding = 3;
+
+                if (b.x + b.radius - padding > this.x && b.x - b.radius + padding < this.x + this.width) {
+                    // 상단 파이프 충돌 검사
+                    if (b.y - b.radius + padding < this.topHeight) {
+                        return true;
+                    }
+                    // 하단 파이프 충돌 검사
+                    if (b.y + b.radius - padding > GAME_HEIGHT - 80 - this.bottomHeight) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
+        // --- 배경 그리기 함수 ---
+        function drawBackground() {
+            // 1. 기본 하늘 그라데이션
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, GAME_HEIGHT);
+            skyGrad.addColorStop(0, '#bae6fd'); // 밝은 하늘 파랑
+            skyGrad.addColorStop(0.7, '#e0f2fe');
+            skyGrad.addColorStop(1, '#fef08a');  // 해질녘 느낌의 노랑 하단부
+            ctx.fillStyle = skyGrad;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // 2. 구름 레이어 (스크롤 효과)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+            const cloudSpeed = 0.3;
+            if (gameState === STATE_PLAYING) {
+                bgScrollX = (bgScrollX - cloudSpeed) % 400;
+            }
+            
+            for (let i = 0; i < 3; i++) {
+                const cloudX = bgScrollX + i * 200;
+                drawCloud(cloudX, 80 + i * 30, 60);
+                drawCloud(cloudX + 100, 180 + i * 20, 40);
+            }
+
+            // 3. 먼 배경 산/도심 실루엣
+            ctx.fillStyle = '#93c5fd';
+            for (let i = 0; i < 4; i++) {
+                const mountainX = (bgScrollX * 1.5 + i * 160) % (GAME_WIDTH + 160);
+                ctx.beginPath();
+                ctx.moveTo(mountainX - 80, GAME_HEIGHT - 80);
+                ctx.lineTo(mountainX, GAME_HEIGHT - 180);
+                ctx.lineTo(mountainX + 80, GAME_HEIGHT - 80);
+                ctx.fill();
+            }
+
+            // 4. 가까운 배경 풀밭 덤불
+            ctx.fillStyle = '#86efac';
+            for (let i = 0; i < 12; i++) {
+                const bushX = (bgScrollX * 3 + i * 60) % (GAME_WIDTH + 60);
+                ctx.beginPath();
+                ctx.arc(bushX - 30, GAME_HEIGHT - 80, 25, 0, Math.PI, true);
+                ctx.fill();
+            }
+        }
+
+        // 구름 그리기 도우미
+        function drawCloud(x, y, r) {
+            // 스크롤 시 화면 밖으로 밀려나면 반대편으로 순환 배치
+            let drawX = x;
+            if (drawX < -r * 3) {
+                drawX = GAME_WIDTH + (drawX % GAME_WIDTH);
+            }
+            ctx.beginPath();
+            ctx.arc(drawX, y, r, 0, Math.PI * 2);
+            ctx.arc(drawX + r * 0.6, y - r * 0.4, r * 0.8, 0, Math.PI * 2);
+            ctx.arc(drawX - r * 0.6, y - r * 0.2, r * 0.7, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // --- 바닥(Ground) 그리기 함수 ---
+        function drawGround() {
+            const groundY = GAME_HEIGHT - 80;
+            const groundWidth = GAME_WIDTH + 30;
+
+            if (gameState === STATE_PLAYING) {
+                fgScrollX = (fgScrollX - 2.4) % 24;
+            }
+
+            // 바닥 본체 (진한 황토색)
+            ctx.fillStyle = '#dfaf75';
+            ctx.fillRect(0, groundY, GAME_WIDTH, 80);
+
+            // 잔디 경계선 (초록색)
+            ctx.fillStyle = '#4ade80';
+            ctx.fillRect(0, groundY, GAME_WIDTH, 14);
+
+            // 풀밭 무늬 (레트로 특유의 사선 스트라이프 형태 패턴 구현)
+            ctx.fillStyle = '#22c55e';
+            ctx.beginPath();
+            for (let x = fgScrollX; x < groundWidth; x += 24) {
+                ctx.moveTo(x, groundY);
+                ctx.lineTo(x + 12, groundY);
+                ctx.lineTo(x, groundY + 14);
+                ctx.lineTo(x - 12, groundY + 14);
+                ctx.closePath();
+            }
+            ctx.fill();
+
+            // 바닥 상단 갈색 구분선
+            ctx.strokeStyle = '#5c4033';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, groundY);
+            ctx.lineTo(GAME_WIDTH, groundY);
+            ctx.stroke();
+        }
+
+        // --- 게임 핵심 엔진 제어 흐름 ---
+
+        function initGame() {
+            bird = new Bird();
+            pipes = [];
+            score = 0;
+            gameFrame = 0;
+            gameScore.innerText = score;
+        }
+
+        function startGame() {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            initGame();
+            gameState = STATE_PLAYING;
+
+            // UI 갱신
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            gameScore.classList.remove('hidden');
+        }
+
+        function gameOver() {
+            if (gameState === STATE_GAMEOVER) return;
+            
+            gameState = STATE_GAMEOVER;
+            playSound('hit');
+
+            // 최고 점수 갱신 및 저장
+            if (score > bestScore) {
+                bestScore = score;
+                localStorage.setItem('willyBirdBest', bestScore);
+            }
+
+            // UI 갱신
+            finalScoreText.innerText = score;
+            bestScoreText.innerText = bestScore;
+
+            gameScore.classList.add('hidden');
+            gameOverScreen.classList.remove('hidden');
+        }
+
+        // 메인 게임 루프
+        function gameLoop() {
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            // 배경 그리기
+            drawBackground();
+
+            if (gameState === STATE_START) {
+                // 시작 대기 화면: 새가 둥실둥실 위아래로 유영함
+                bird.y = GAME_HEIGHT / 2 + Math.sin(Date.now() / 200) * 12;
+                bird.update();
+                bird.draw();
+            } 
+            else if (gameState === STATE_PLAYING) {
+                // 게임 진행 시뮬레이션
+                gameFrame++;
+
+                // 일정 프레임 간격(95프레임)으로 새로운 파이프 생성
+                if (gameFrame % 95 === 0) {
+                    pipes.push(new Pipe());
+                }
+
+                // 파이프 업데이트 및 렌더링
+                for (let i = pipes.length - 1; i >= 0; i--) {
+                    pipes[i].update();
+                    pipes[i].draw();
+
+                    // 충돌 감지
+                    if (pipes[i].collidesWith(bird)) {
+                        gameOver();
+                    }
+
+                    // 점수 카운트 (새의 중심선 통과 여부 검사)
+                    if (!pipes[i].passed && pipes[i].x + pipes[i].width / 2 < bird.x) {
+                        score++;
+                        pipes[i].passed = true;
+                        gameScore.innerText = score;
+                        playSound('point');
+                    }
+
+                    // 화면 밖으로 벗어난 파이프 수거 (가비지 컬렉션)
+                    if (pipes[i].x + pipes[i].width < 0) {
+                        pipes.splice(i, 1);
+                    }
+                }
+
+                bird.update();
+                bird.draw();
+            } 
+            else if (gameState === STATE_GAMEOVER) {
+                // 게임오버 상황에서도 파이프와 새의 잔여 드로잉 유지
+                for (let pipe of pipes) {
+                    pipe.draw();
+                }
+                // 새가 바닥으로 떨어지는 낙하 물리 효과 지속 연출
+                bird.update();
+                bird.draw();
+            }
+
+            // 땅 렌더링 (가장 전면)
+            drawGround();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- 컨트롤러 이벤트 리스너 정의 ---
+
+        // 키보드 스페이스바 입력 이벤트 처리
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault(); // 스페이스바 화면 스크롤 기본 행동 방어
+                handleAction();
+            }
+        });
+
+        // 캔버스 터치 및 클릭 조작 이벤트 처리
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // 더블클릭 줌 등 터치 오동작 제거
+            handleAction();
+        }, { passive: false });
+
+        canvas.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            handleAction();
+        });
+
+        // 시작/다시하기 버튼 직접 바인딩
+        startButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+
+        restartButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            startGame();
+        });
+
+        // 공통 사용자 액션 처리기
+        function handleAction() {
+            if (gameState === STATE_START) {
+                startGame();
+            } else if (gameState === STATE_PLAYING) {
+                bird.flap();
+            } else if (gameState === STATE_GAMEOVER) {
+                // 게임오버 화면에서는 버튼을 정확히 클릭하도록 리액션 미적용
+            }
+        }
+
+        // 게임 초기 기동
+        window.onload = function() {
+            initGame();
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
